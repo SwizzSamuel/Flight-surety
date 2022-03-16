@@ -1,4 +1,4 @@
-
+const truffleAssert = require('truffle-assertions');
 var Test = require('../config/testConfig.js');
 //var BigNumber = require('bignumber.js');
 
@@ -19,55 +19,66 @@ contract('Oracles', async (accounts) => {
 
   });
 
+  const oracles = [];
 
   it('can register oracles', async () => {
     
-    // ARRANGE
     let fee = await config.flightSuretyApp.REGISTRATION_FEE.call();
 
     // ACT
     for(let a=1; a<TEST_ORACLES_COUNT; a++) {      
+      if (!accounts[a]) break;
+
       await config.flightSuretyApp.registerOracle({ from: accounts[a], value: fee });
-      let result = await config.flightSuretyApp.getMyIndexes.call({from: accounts[a]});
-      console.log(`Oracle Registered: ${result[0]}, ${result[1]}, ${result[2]}`);
+      let indexes = await config.flightSuretyApp.getMyIndexes.call({from: accounts[a]});
+      console.log(`Oracle Registered: ${indexes[0]}, ${indexes[1]}, ${indexes[2]}`);
+
+      oracles.push({
+        address: accounts[a],
+        indexes: indexes
+      })
+
     }
-  });
 
-  it('can request flight status', async () => {
-    
-    // ARRANGE
-    let flight = 'ND1309'; // Course number
-    let timestamp = Math.floor(Date.now() / 1000);
+    it('can fetch flight status', async() => {
+      const airline = accounts[0];
+      const flight = 'ND1309';
+      const timestamp = Math.floor(Data.now() / 1000);
 
-    // Submit a request for oracles to get status information for a flight
-    await config.flightSuretyApp.fetchFlightStatus(config.firstAirline, flight, timestamp);
-    // ACT
+      const oracleRequest = await config.flightSuretyApp.fetchFlightStatus(airline, flight, timestamp);
 
-    // Since the Index assigned to each test account is opaque by design
-    // loop through all the accounts and for each account, all its Indexes (indices?)
-    // and submit a response. The contract will reject a submission if it was
-    // not requested so while sub-optimal, it's a good test of that feature
-    for(let a=1; a<TEST_ORACLES_COUNT; a++) {
+      let index;
 
-      // Get oracle information
-      let oracleIndexes = await config.flightSuretyApp.getMyIndexes.call({ from: accounts[a]});
-      for(let idx=0;idx<3;idx++) {
+      truffleAssert.eventEmitted(oracleRequest, 'OracleRequest', (ev) => {
+        index = ev.index;
+        return ev.flight === flight;
+      })
+      
+      const relevantOracle = [];
 
-        try {
-          // Submit a response...it will only be accepted if there is an Index match
-          await config.flightSuretyApp.submitOracleResponse(oracleIndexes[idx], config.firstAirline, flight, timestamp, STATUS_CODE_ON_TIME, { from: accounts[a] });
-
+      oracles.forEach(oracle => {
+        for(let i = 0; i < 3; i++){
+          if(oracle.indexes[i] === index){
+            relevantOracle.push(oracle);
+          }
         }
-        catch(e) {
-          // Enable this when debugging
-           console.log('\nError', idx, oracleIndexes[idx].toNumber(), flight, timestamp);
-        }
+      })
 
+      if(relevantOracle.length < 3){
+        console.warn("Not enough Oracles to pass, try running test again");
       }
-    }
 
+      await config.flightSuretyApp.submitOracleResponse(index, airline, flight, timestamp, STATUS_CODE_ON_TIME, {from: relevantOracle[0]});
 
+      truffleAssert.eventEmitted(submitOracleResponse, 'OracleReport', (ev) => {
+        return ev.airline === airline && ev.flight === flight;
+    });
+    })
   });
+
+
+
+  
 
 
  

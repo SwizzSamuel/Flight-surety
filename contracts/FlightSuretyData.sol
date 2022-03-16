@@ -1,4 +1,4 @@
-pragma solidity ^0.4.25;
+pragma solidity >=0.4.24;
 
 import "../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol";
 
@@ -11,6 +11,7 @@ contract FlightSuretyData {
 
     address private contractOwner;                                      // Account used to deploy contract
     bool private operational = true;                                    // Blocks all state changes throughout the contract if false
+    mapping(address => bool) authorizedCallers;
 
     /********************************************************************************************/
     /*                                       EVENT DEFINITIONS                                  */
@@ -21,12 +22,17 @@ contract FlightSuretyData {
     * @dev Constructor
     *      The deploying account becomes contractOwner
     */
-    constructor
-                                (
-                                ) 
-                                public 
+    constructor() public
     {
         contractOwner = msg.sender;
+        airlines[contractOwner] = Airline({callerAddress:contractOwner, name:"First Airline", state:AirlineState.Paid, approvalCount:0});
+        totalPaidAirlines++;
+    }
+
+    function()
+    external
+    payable
+    {
     }
 
     /********************************************************************************************/
@@ -38,11 +44,10 @@ contract FlightSuretyData {
 
     /**
     * @dev Modifier that requires the "operational" boolean variable to be "true"
-    *      This is used on all state changing functions to pause the contract in 
+    *      This is used on all state changing functions to pause the contract in
     *      the event there is an issue that needs to be fixed
     */
-    modifier requireIsOperational() 
-    {
+    modifier requireIsOperational() {
         require(operational, "Contract is currently not operational");
         _;  // All modifiers require an "_" which indicates where the function body will be added
     }
@@ -56,6 +61,11 @@ contract FlightSuretyData {
         _;
     }
 
+    modifier requireAuthorizedCaller() {
+        require(authorizedCallers[msg.sender] || (msg.sender == contractOwner), "Caller is not authorized");
+        _;
+    }
+
     /********************************************************************************************/
     /*                                       UTILITY FUNCTIONS                                  */
     /********************************************************************************************/
@@ -64,12 +74,8 @@ contract FlightSuretyData {
     * @dev Get operating status of contract
     *
     * @return A bool that is the current operating status
-    */      
-    function isOperational() 
-                            public 
-                            view 
-                            returns(bool) 
-    {
+    */
+    function isOperational() public view returns(bool) {
         return operational;
     }
 
@@ -78,109 +84,143 @@ contract FlightSuretyData {
     * @dev Sets contract operations on/off
     *
     * When operational mode is disabled, all write transactions except for this one will fail
-    */    
-    function setOperatingStatus
-                            (
-                                bool mode
-                            ) 
-                            external
-                            requireContractOwner 
-    {
+    */
+    function setOperatingStatus( bool mode ) external requireContractOwner {
         operational = mode;
+    }
+
+    function setAuthorizedStatus(address caller, bool status) external requireContractOwner returns(bool) {
+        authorizedCallers[caller] = status;
+        return authorizedCallers[caller];
+    }
+
+    function getAuthorizedStatus(address caller) public view requireContractOwner returns(bool){
+        return authorizedCallers[caller];
     }
 
     /********************************************************************************************/
     /*                                     SMART CONTRACT FUNCTIONS                             */
     /********************************************************************************************/
 
-   /**
-    * @dev Add an airline to the registration queue
-    *      Can only be called from FlightSuretyApp contract
-    *
-    */   
-    function registerAirline
-                            (   
-                            )
-                            external
-                            pure
-    {
+
+    /********************************************************************************************/
+    /*                                     AIRLINE FUNCTIONS                             */
+    /********************************************************************************************/
+
+    struct Airline {
+        address callerAddress;
+        string name;
+        AirlineState state;
+        mapping(address => bool) approvals;
+        uint8 approvalCount;
     }
+    enum AirlineState {
+        Applied,
+        Registered,
+        Paid
+    }
+    mapping(address => Airline) internal airlines;
+    uint256 internal totalPaidAirlines = 0;
+
+
+    function getAirlineState(address airlineAddress) external view requireAuthorizedCaller returns(uint state){
+        if(airlines[airlineAddress].state == AirlineState.Applied){
+            state = 0;
+        }
+        if(airlines[airlineAddress].state == AirlineState.Registered){
+            state = 1;
+        }
+        if(airlines[airlineAddress].state == AirlineState.Paid){
+            state = 2;
+        }
+    }
+
+    function updateAirlineState(address airlineAddress, uint8 state) external requireAuthorizedCaller {
+        airlines[airlineAddress].state = AirlineState(state);
+        if(state == 2){
+            totalPaidAirlines++;
+        }
+    }
+
+    function getTotalPaidAirlines() external view requireAuthorizedCaller returns(uint256){
+        return totalPaidAirlines;
+    }
+
+    function registerAirline(address airlineAddress, string name, uint8 state) external requireAuthorizedCaller {
+        airlines[airlineAddress] = Airline({callerAddress:airlineAddress, name:name, state:AirlineState(state), approvalCount:0});
+        if(state == 2){
+            totalPaidAirlines++;
+        }
+    }
+
+    function approveAirline(address airlineAddress, address approver) external requireAuthorizedCaller returns(uint8){
+        require(airlines[airlineAddress].approvals[approver] == false, "duplicate approver");
+
+        airlines[airlineAddress].approvals[approver] = true;
+        airlines[airlineAddress].approvalCount++;
+
+        return airlines[airlineAddress].approvalCount;
+    }
+
+
+    /********************************************************************************************/
+    /*                                     PASSENGER INSURANCE FUNCTIONS                             */
+    /********************************************************************************************/
+
+    enum InsuranceState {
+        Bought,
+        Claimed
+    }
+
+    struct Insurance {
+        string flight;
+        uint256 price;
+        uint256 payoutPrice;
+        InsuranceState state;
+    }
+
+    mapping(address => mapping(string => Insurance)) private passengerInsurance;
+    mapping(address => uint256) passengerBalance;
 
 
    /**
     * @dev Buy insurance for a flight
     *
-    */   
-    function buy
-                            (                             
-                            )
-                            external
-                            payable
-    {
-
-    }
-
-    /**
-     *  @dev Credits payouts to insurees
     */
-    function creditInsurees
-                                (
-                                )
-                                external
-                                pure
+    function getInsurance(address passenger, string flight) external view requireAuthorizedCaller returns(
+                                                             uint256 price,
+                                                        uint256 payoutPrice,
+                                                        InsuranceState state)
     {
-    }
-    
-
-    /**
-     *  @dev Transfers eligible payout funds to insuree
-     *
-    */
-    function pay
-                            (
-                            )
-                            external
-                            pure
-    {
+        price = passengerInsurance[passenger][flight].price;
+        payoutPrice = passengerInsurance[passenger][flight].payoutPrice;
+        state = passengerInsurance[passenger][flight].state;
     }
 
-   /**
-    * @dev Initial funding for the insurance. Unless there are too many delayed flights
-    *      resulting in insurance payouts, the contract should be self-sustaining
-    *
-    */   
-    function fund
-                            (   
-                            )
-                            public
-                            payable
-    {
+    function createInsurance(address passenger, string flight, uint256 price, uint256 payoutPrice) external requireAuthorizedCaller {
+        require(passengerInsurance[passenger][flight].price != price, "Insurance already exists");
+
+        passengerInsurance[passenger][flight] = Insurance(flight, price, payoutPrice, InsuranceState.Bought);
     }
 
-    function getFlightKey
-                        (
-                            address airline,
-                            string memory flight,
-                            uint256 timestamp
-                        )
-                        pure
-                        internal
-                        returns(bytes32) 
-    {
-        return keccak256(abi.encodePacked(airline, flight, timestamp));
+    function claimInsurance(address passenger, string flight) external requireAuthorizedCaller {
+        require(passengerInsurance[passenger][flight].state == InsuranceState.Bought, "Insurance already claimed");
+
+        passengerInsurance[passenger][flight].state = InsuranceState.Claimed;
+
+        passengerBalance[passenger] = passengerBalance[passenger].add(passengerInsurance[passenger][flight].payoutPrice);
     }
 
-    /**
-    * @dev Fallback function for funding smart contract.
-    *
-    */
-    function() 
-                            external 
-                            payable 
-    {
-        fund();
+    function getPassengerBalance(address passenger) external view requireAuthorizedCaller returns(uint256) {
+        return passengerBalance[passenger];
+    }
+
+    function payPassenger(address passenger) external requireAuthorizedCaller {
+        require(passengerBalance[passenger] > 0, "Passenger doesn't have enough to withdraw");
+
+        passengerBalance[passenger] = 0;
+        passenger.transfer(passengerBalance[passenger]);
     }
 
 
 }
-

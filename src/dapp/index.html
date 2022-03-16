@@ -24,7 +24,21 @@
         <div id="display-wrapper" class="top-20">
         </div>
         <div class="row top-20">
-            <label class="form">Flight</label> <input type="text" id="flight-number"> <btn class="btn btn-primary" id="submit-oracle">Submit to Oracles</btn>
+            <label class="form">Flight</label>
+            <input type="text" id="flight-number"> 
+            <btn class="btn btn-primary" id="submit-oracle">Submit to Oracles</btn>
+        </div>
+        <div class="top-20">
+            <h2>Purchase Insurance</h2> <br>
+
+            <p class="description">Select a flight below to purchase up to 1 ether of insurance</p> <br>
+
+            <select name="purchase-insurance" id="purchase-insurance-flights" aria-label="Flights"></select> <br>
+
+
+            <input type="number" name="amount" id="purchase-insurance-amount" placeholder="1 ether" value="1"> <br>
+
+            <button class="btn btn-primary" id="buy-insurance" >Buy Insurance</button>
         </div>
     </main>
 
